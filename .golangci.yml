@@ -1,43 +1,54 @@
+version: "2"
+run:
+  build-tags:
+    - integration
 linters:
   enable:
-    - errcheck
-    - govet
-    - ineffassign
-    - staticcheck
-    - unused
-    - gosimple
     - gocritic
-    - gofmt
-    - goimports
     - misspell
     - prealloc
     - unconvert
     - unparam
-
-linters-settings:
-  gocritic:
-    enabled-tags:
-      - diagnostic
-      - performance
-    disabled-tags:
-      - style
-      - opinionated
-      - experimental
-  gofmt:
-    simplify: true
-
+  settings:
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - performance
+      disabled-tags:
+        - style
+        - opinionated
+        - experimental
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      - linters:
+          - errcheck
+          - gocritic
+          - prealloc
+          - unparam
+        path: _test\.go
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
 issues:
-  exclude-rules:
-    - path: _test\.go
-      linters:
-        - errcheck
-        - gocritic
-        - prealloc
-        - unparam
   max-issues-per-linter: 0
   max-same-issues: 0
-
-run:
-  timeout: 5m
-  build-tags:
-    - integration
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    gofmt:
+      simplify: true
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
