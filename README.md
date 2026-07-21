@@ -59,14 +59,29 @@ Supported Makefile features:
 - file target freshness checks based on prerequisite timestamps
 - basic recursive flag propagation through `MAKEFLAGS`
 
-Current limits:
+- pattern rules (`%.o: %.c`), static pattern rules, and the built-in implicit-rule database
+- chained implicit rules and intermediate target handling
+- double-colon (`::`) rules, grouped targets, archive members (`lib.a(obj.o)`), and suffix rules
+- `.SECONDEXPANSION`, `.INTERMEDIATE`, `.SECONDARY`, `.NOTINTERMEDIATE`, `.LOW_RESOLUTION_TIME`, `.POSIX`
+- `-j N` parallel execution with a GNU jobserver (fifo-based) that coordinates job slots across recursive `$(MAKE)` invocations
+
+## Shell Selection
+
+Recipes run through an embedded Go shell interpreter
+([`mvdan.cc/sh`](https://github.com/mvdan/sh)) by default, so no system `/bin/sh`
+is required. Setting `SHELL` (and optionally `.SHELLFLAGS`) switches recipe
+execution to that external shell instead.
+
+## Current Limits
 
 - not full GNU Make language compatibility
-- no pattern rules or implicit rules
-- target-specific and pattern-specific edge-case semantics are still being aligned with GNU Make
-- no GNU jobserver support yet
 - built-in function edge-case semantics are still being aligned with GNU Make
 - recipe lines within a single target execute sequentially
+- the GNU jobserver server (fifo creation) is unix-only; on other platforms
+  `-j N` falls back to a local scheduler without cross-`$(MAKE)` coordination
+- self-referential recursive variables (`A = $(A) x`) are flattened at load time
+  rather than reported as an error when expanded (see `TODO.md`)
+- no `load` directive (dynamically loaded extensions)
 
 ## Commands
 

@@ -403,7 +403,9 @@ func TestBuildTreatsPhonyPrerequisiteAsOutOfDate(t *testing.T) {
 	}
 }
 
-func TestBuildOneShellIgnoresFailureOnlyForLastIgnoredCommand(t *testing.T) {
+// Under .ONESHELL, GNU make honors the recipe prefix (-, @, +) only on the
+// first line; an ignore prefix on a later line does not suppress its failure.
+func TestBuildOneShellIgnorePrefixOnLaterLineDoesNotSuppressFailure(t *testing.T) {
 	dir := t.TempDir()
 	project := &config.Project{
 		DefaultTarget: "all",
@@ -424,10 +426,11 @@ func TestBuildOneShellIgnoresFailureOnlyForLastIgnoredCommand(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
-	if err := engine.Build("all"); err != nil {
-		t.Fatalf("Build() error = %v", err)
+	err = engine.Build("all")
+	if err == nil || !strings.Contains(err.Error(), "shell command failed") {
+		t.Fatalf("Build() error = %v, want shell command failure", err)
 	}
-
+	// The recipe still ran up to the failing command.
 	content, err := os.ReadFile(filepath.Join(dir, "result.txt"))
 	if err != nil {
 		t.Fatalf("ReadFile() error = %v", err)
@@ -437,7 +440,9 @@ func TestBuildOneShellIgnoresFailureOnlyForLastIgnoredCommand(t *testing.T) {
 	}
 }
 
-func TestBuildOneShellDoesNotIgnoreFailureFromNonIgnoredLastCommand(t *testing.T) {
+// An ignore prefix on the first line suppresses failures for the whole
+// .ONESHELL recipe, including a failing final command.
+func TestBuildOneShellIgnorePrefixOnFirstLineSuppressesWholeRecipe(t *testing.T) {
 	dir := t.TempDir()
 	project := &config.Project{
 		DefaultTarget: "all",
@@ -458,10 +463,8 @@ func TestBuildOneShellDoesNotIgnoreFailureFromNonIgnoredLastCommand(t *testing.T
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
-
-	err = engine.Build("all")
-	if err == nil || !strings.Contains(err.Error(), "shell command failed") {
-		t.Fatalf("Build() error = %v, want shell command failure", err)
+	if err := engine.Build("all"); err != nil {
+		t.Fatalf("Build() error = %v, want success with first-line ignore prefix", err)
 	}
 }
 
@@ -909,7 +912,8 @@ func TestRunTargetSilentSuppressesCommandEcho(t *testing.T) {
 func TestRunTargetExportsMarkedVariables(t *testing.T) {
 	dir := t.TempDir()
 	key := "GOMAKE_EXPORT_MARKED"
-	commandText := fmt.Sprintf("printf '%%s' \"$%s\" > out.txt", key)
+	// $$ so make passes $VAR through to the shell, which reads it from the exported environment.
+	commandText := fmt.Sprintf("printf '%%s' \"$$%s\" > out.txt", key)
 	project := &config.Project{
 		DefaultTarget: "all",
 		Variables: map[string]string{
@@ -942,7 +946,8 @@ func TestRunTargetUnexportRemovesEnvironmentValue(t *testing.T) {
 	dir := t.TempDir()
 	key := "GOMAKE_EXPORT_UNEXPORT"
 	t.Setenv(key, "from-env")
-	commandText := fmt.Sprintf("printf '%%s' \"$%s\" > out.txt", key)
+	// $$ so make passes $VAR through to the shell, which reads it from the exported environment.
+	commandText := fmt.Sprintf("printf '%%s' \"$$%s\" > out.txt", key)
 	project := &config.Project{
 		DefaultTarget: "all",
 		Variables: map[string]string{
@@ -974,7 +979,8 @@ func TestRunTargetUnexportRemovesEnvironmentValue(t *testing.T) {
 func TestRunTargetExportAllVariables(t *testing.T) {
 	dir := t.TempDir()
 	key := "GOMAKE_EXPORT_ALL"
-	commandText := fmt.Sprintf("printf '%%s' \"$%s\" > out.txt", key)
+	// $$ so make passes $VAR through to the shell, which reads it from the exported environment.
+	commandText := fmt.Sprintf("printf '%%s' \"$$%s\" > out.txt", key)
 	project := &config.Project{
 		DefaultTarget:      "all",
 		ExportAllVariables: true,

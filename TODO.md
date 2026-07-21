@@ -136,9 +136,9 @@ Exit criteria for P2:
 ### P3: CLI, Parallelism, and Recursive Propagation
 
 - [x] `-j` parallel execution (local scheduler implemented)
-- [ ] GNU jobserver client (token acquisition from inherited pipe)
-- [ ] GNU jobserver server (pipe creation and token management)
-- [ ] jobserver descriptor propagation to recursive invocations
+- [x] GNU jobserver client (adopts an inherited fifo or legacy `R,W` descriptor jobserver)
+- [x] GNU jobserver server (creates a fifo jobserver primed with `-jN` tokens; unix)
+- [x] jobserver descriptor propagation to recursive invocations (fifo path travels in `MAKEFLAGS`)
 - [x] full `-C` and `-f` interaction parity
 - [x] broad long-option compatibility with GNU Make
 - [x] command-line variable export behavior parity
@@ -163,16 +163,26 @@ Exit criteria for P2:
 - [x] default implicit-rule variables (`CC`, `CXX`, `AR`, `RM`, related flags)
 - [x] shell-related built-ins with GNU semantics
 - [x] directory/file metadata internals required by implicit-rule engine
-- [ ] update `README.md` compatibility matrix to reflect massive P0-P2 progress
-- [ ] document shell selection behavior (embedded vs external) and host requirements
-- [ ] document supported subset versus unsupported features (e.g. `load`)
+- [x] update `README.md` compatibility matrix to reflect massive P0-P2 progress
+- [x] document shell selection behavior (embedded vs external) and host requirements
+- [x] document supported subset versus unsupported features (e.g. `load`)
 - [ ] add comprehensive examples for advanced patterns and recursive workflows
+
+## Known Limitations
+
+- Self-referential recursive variables (`A = $(A) x`) are resolved once at load
+  time and flattened (the self-reference expands to empty) instead of aborting
+  with "recursive variable references itself" when expanded, as GNU make does.
+  Non-self-referential recursive variables and `:=` self-references are
+  unaffected.
+- GNU jobserver server creation is unix-only (named pipe). On other platforms
+  `-jN` falls back to a local scheduler with no cross-`$(MAKE)` coordination.
 
 ## Global Done Criteria
 
 The compatibility effort is considered complete when all of the following are true:
 
-- [ ] GNU Jobserver (P3) is fully implemented and tested across recursive calls
+- [x] GNU Jobserver (P3) is implemented (fifo server + fifo/fd client) and tested across recursive calls
 - [x] differential suite shows no known behavioral drift for in-scope features
 - [ ] persistent regression fixtures cover every one of the 70+ implemented compat points
 - [ ] documentation describes behavior with 100% accuracy, including edge cases

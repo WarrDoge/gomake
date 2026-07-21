@@ -79,6 +79,7 @@ func Run(args []string) error {
 	if err != nil {
 		return err
 	}
+	defer engine.Close()
 	defer engine.SetupSignals()()
 
 	if len(targets) == 0 {
@@ -356,6 +357,9 @@ func composeMakeFlags(options build.Options, overrides map[string]string) string
 	}
 	if !options.Verbose {
 		flags = append(flags, "-s")
+	}
+	if options.DryRun {
+		flags = append(flags, "-n")
 	}
 	if options.Rebuild {
 		flags = append(flags, "-B")

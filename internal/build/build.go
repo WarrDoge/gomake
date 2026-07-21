@@ -52,6 +52,7 @@ type Engine struct {
 	runningRules       sync.Map // map[string]config.Target
 	interrupted        bool
 	interruptOnce      sync.Once
+	jobserver          *jobserver
 }
 
 func New(project *config.Project, options Options) (*Engine, error) {
@@ -92,7 +93,16 @@ func New(project *config.Project, options Options) (*Engine, error) {
 		effectiveVars:      make(map[string]map[string]string),
 		effectiveFlavors:   make(map[string]map[string]config.VariableFlavor),
 		effectiveOverrides: make(map[string]map[string]bool),
+		jobserver:          setupJobserver(project, &options),
 	}, nil
+}
+
+// Close releases resources held for the lifetime of the build, notably the
+// jobserver fifo. Safe to call more than once.
+func (e *Engine) Close() {
+	if e.jobserver != nil {
+		e.jobserver.close()
+	}
 }
 
 func (e *Engine) SetupSignals() func() {
@@ -111,6 +121,7 @@ func (e *Engine) SetupSignals() func() {
 					e.cleanupTargetOnError(target, true)
 					return true
 				})
+				e.Close()
 			})
 			os.Exit(130) // standard exit code for SIGINT
 		case <-ctx.Done():
@@ -207,7 +218,8 @@ func (e *Engine) Build(targetName string) error {
 	if err != nil {
 		return err
 	}
-	if e.options.Jobs <= 1 || len(order) <= 1 {
+	parallel := (e.options.Jobs > 1 || e.jobserver != nil) && !e.project.NotParallel
+	if !parallel || len(order) <= 1 {
 		return e.buildSequential(order)
 	}
 	return e.buildParallel(order)
@@ -240,6 +252,10 @@ type targetExecutionResult struct {
 
 func (e *Engine) buildParallel(order []string) error {
 	jobs := e.options.Jobs
+	if e.jobserver != nil && jobs < 2 {
+		// Adopted jobserver with no local -j: let the shared token pool throttle.
+		jobs = len(order)
+	}
 	if jobs < 1 {
 		jobs = 1
 	}
@@ -331,6 +347,14 @@ func (e *Engine) buildParallel(order []string) error {
 			enqueued[name] = true
 			running++
 			go func(targetName string) {
+				if e.jobserver != nil {
+					tok, err := e.jobserver.acquire()
+					if err != nil {
+						resultCh <- targetExecutionResult{name: targetName, err: err}
+						return
+					}
+					defer e.jobserver.release(tok)
+				}
 				resultCh <- targetExecutionResult{name: targetName, err: e.buildResolvedTarget(targetName, nil)}
 			}(name)
 		}
@@ -377,7 +401,9 @@ func (e *Engine) buildResolvedTarget(name string, failed map[string]bool) error 
 }
 
 func (e *Engine) buildResolvedRule(target config.Target) error {
-	if e.built[target.Name] {
+	// Each double-colon rule runs independently, so it is not deduplicated by
+	// the built marker the way a single-colon target is.
+	if !target.DoubleColon && e.built[target.Name] {
 		return nil
 	}
 	if err := e.validatePrerequisites(target); err != nil {
@@ -444,17 +470,19 @@ func (e *Engine) resolve(targetName string) ([]string, error) {
 				flavors[k] = parentFlavors[k]
 				overrides[k] = parentOverrides[k]
 			}
-			// Merge pattern-specific variables
-			for _, pattern := range e.project.PatternOrder {
-				if _, ok := matchPattern(pattern, name); ok {
-					pVars := e.project.PatternVars[pattern]
-					pFlavors := e.project.PatternFlavors[pattern]
-					pOverrides := e.project.PatternOverrides[pattern]
-					for k, v := range pVars {
-						vars[k] = v
-						flavors[k] = pFlavors[k]
-						overrides[k] = pOverrides[k]
-					}
+			// Merge pattern-specific variables. GNU applies the most specific
+			// match last so it wins: shorter stem = more specific; equal stems
+			// break toward the later definition. PatternOrder is definition
+			// order, so a stable sort by descending stem length yields exactly
+			// that (least specific first, winner applied last).
+			for _, pattern := range matchingPatternsBySpecificity(e.project.PatternOrder, name) {
+				pVars := e.project.PatternVars[pattern]
+				pFlavors := e.project.PatternFlavors[pattern]
+				pOverrides := e.project.PatternOverrides[pattern]
+				for k, v := range pVars {
+					vars[k] = v
+					flavors[k] = pFlavors[k]
+					overrides[k] = pOverrides[k]
 				}
 			}
 			// Merge target-specific variables from all rules for this name
@@ -649,7 +677,9 @@ func (e *Engine) runTarget(target config.Target) error {
 		if target.Phony {
 			return nil
 		}
-		if _, err := e.statTarget(target.Name); err == nil {
+		// A command-less prerequisite is satisfied if its file exists, including
+		// via VPATH/vpath lookup, not only at its literal path.
+		if _, _, err := e.statPrerequisite(target.Name); err == nil {
 			return nil
 		}
 		if e.hasDefaultRule() {
@@ -1134,6 +1164,30 @@ func splitSearchDirectories(raw string) []string {
 		}
 	}
 	return directories
+}
+
+// matchingPatternsBySpecificity returns the patterns from order that match name,
+// least specific first (longest stem) so callers applying them in sequence let
+// the most specific win. Equal stems keep definition order (later wins on apply).
+func matchingPatternsBySpecificity(order []string, name string) []string {
+	type match struct {
+		pattern string
+		stemLen int
+	}
+	var matches []match
+	for _, pattern := range order {
+		if stem, ok := matchPattern(pattern, name); ok {
+			matches = append(matches, match{pattern, len(stem)})
+		}
+	}
+	sort.SliceStable(matches, func(a, b int) bool {
+		return matches[a].stemLen > matches[b].stemLen
+	})
+	out := make([]string, len(matches))
+	for i, m := range matches {
+		out[i] = m.pattern
+	}
+	return out
 }
 
 func matchPattern(pattern, name string) (string, bool) {
