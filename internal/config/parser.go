@@ -19,82 +19,6 @@ func (s *parserState) expand(input string) string {
 	return expandVarsWithStackCallbacks(input, s.project.Variables, s.varFlavors, nil, s.warnUndefinedVariable, s.reportRecursiveExpansion)
 }
 
-func (s *parserState) expandRecipe(input string) string {
-	if s.recursiveExpansionErr != nil {
-		return ""
-	}
-	vars, flavors := s.recipeExpansionState()
-	if !s.warnUndefined {
-		return expandRecipeVarsWithCallbacks(input, vars, flavors, nil, s.reportRecursiveExpansion)
-	}
-	return expandRecipeVarsWithCallbacks(input, vars, flavors, s.warnUndefinedVariable, s.reportRecursiveExpansion)
-}
-
-func (s *parserState) expandRecipeForTarget(targetName, input string) string {
-	if s.recursiveExpansionErr != nil {
-		return ""
-	}
-	vars, flavors := s.recipeExpansionStateForTarget(targetName)
-	if !s.warnUndefined {
-		return expandRecipeVarsWithCallbacks(input, vars, flavors, nil, s.reportRecursiveExpansion)
-	}
-	return expandRecipeVarsWithCallbacks(input, vars, flavors, s.warnUndefinedVariable, s.reportRecursiveExpansion)
-}
-
-func (s *parserState) recipeExpansionState() (map[string]string, map[string]VariableFlavor) {
-	if len(s.privateGlobals) == 0 {
-		return s.project.Variables, s.varFlavors
-	}
-	vars := make(map[string]string, len(s.project.Variables))
-	for key, value := range s.project.Variables {
-		if s.isPrivateVariableKey(key) {
-			continue
-		}
-		vars[key] = value
-	}
-	flavors := make(map[string]VariableFlavor, len(s.varFlavors))
-	for key, flavor := range s.varFlavors {
-		if s.privateGlobals[key] {
-			continue
-		}
-		flavors[key] = flavor
-	}
-	return vars, flavors
-}
-
-func (s *parserState) recipeExpansionStateForTarget(targetName string) (map[string]string, map[string]VariableFlavor) {
-	patternVars, patternFlavors := s.patternExpansionStateForTarget(targetName)
-	targetVars := s.targetVars[targetName]
-	targetFlavors := s.targetFlavors[targetName]
-	if len(patternVars) == 0 && len(patternFlavors) == 0 && len(targetVars) == 0 && len(targetFlavors) == 0 {
-		return s.recipeExpansionState()
-	}
-
-	baseVars, baseFlavors := s.recipeExpansionState()
-	vars := make(map[string]string, len(baseVars)+len(patternVars)+len(targetVars))
-	for key, value := range baseVars {
-		vars[key] = value
-	}
-	for key, value := range patternVars {
-		vars[key] = value
-	}
-	for key, value := range targetVars {
-		vars[key] = value
-	}
-
-	flavors := make(map[string]VariableFlavor, len(baseFlavors)+len(patternFlavors)+len(targetFlavors))
-	for key, flavor := range baseFlavors {
-		flavors[key] = flavor
-	}
-	for key, flavor := range patternFlavors {
-		flavors[key] = flavor
-	}
-	for key, flavor := range targetFlavors {
-		flavors[key] = flavor
-	}
-	return vars, flavors
-}
-
 func (s *parserState) patternExpansionStateForTarget(targetName string) (map[string]string, map[string]VariableFlavor) {
 	if len(s.patternOrder) == 0 {
 		return nil, nil
@@ -156,17 +80,6 @@ func patternStemLength(pattern, target string) (int, bool) {
 		return 0, false
 	}
 	return len(target) - len(prefix) - len(suffix), true
-}
-
-func (s *parserState) isPrivateVariableKey(key string) bool {
-	if s.privateGlobals[key] {
-		return true
-	}
-	if strings.HasPrefix(key, originPrefix) {
-		_, ok := s.privateGlobals[strings.TrimPrefix(key, originPrefix)]
-		return ok
-	}
-	return false
 }
 
 func (s *parserState) warnUndefinedVariable(name string) {
@@ -400,9 +313,7 @@ func (s *parserState) parseRawLine(path, rawLine string) error {
 		return nil
 	}
 
-	if handled, err := s.handleVPathDirective(line); err != nil {
-		return err
-	} else if handled {
+	if s.handleVPathDirective(line) {
 		return nil
 	}
 
@@ -518,7 +429,7 @@ func (s *parserState) parseRawLine(path, rawLine string) error {
 	right := s.expand(rawDeps)
 	targetNames := splitFields(left)
 	deps, orderOnly := splitPrerequisites(right)
-	
+
 	var groupTargets []string
 	if isGrouped && len(targetNames) > 1 {
 		groupTargets = append([]string(nil), targetNames...)
@@ -763,33 +674,33 @@ func (s *parserState) handleUndefineDirective(body string) error {
 	return nil
 }
 
-func (s *parserState) handleVPathDirective(line string) (bool, error) {
+func (s *parserState) handleVPathDirective(line string) bool {
 	if line == "vpath" {
 		s.project.VPaths = nil
-		return true, nil
+		return true
 	}
 	if !hasDirectiveArg(line, "vpath") {
-		return false, nil
+		return false
 	}
 	body := s.expand(directiveArg(line, "vpath"))
 	fields := splitFields(body)
 	if len(fields) == 0 {
 		s.project.VPaths = nil
-		return true, nil
+		return true
 	}
 	pattern := fields[0]
 	if len(fields) == 1 {
 		s.removeVPathPattern(pattern)
-		return true, nil
+		return true
 	}
 	directories := parseVPathDirectories(fields[1:])
 	if len(directories) == 0 {
 		s.removeVPathPattern(pattern)
-		return true, nil
+		return true
 	}
 	s.removeVPathPattern(pattern)
 	s.project.VPaths = append(s.project.VPaths, VPath{Pattern: pattern, Directories: append([]string(nil), directories...)})
-	return true, nil
+	return true
 }
 
 func parseVPathDirectories(parts []string) []string {
@@ -1281,14 +1192,14 @@ func (s *parserState) handleConditional(line string) (bool, error) {
 		if frame.inElse {
 			return true, errors.New("duplicate else in conditional block")
 		}
-		
+
 		remainder := strings.TrimSpace(strings.TrimPrefix(line, "else"))
 		if remainder == "" {
 			frame.inElse = true
 			frame.active = frame.parentActive && !frame.conditionMet
 			return true, nil
 		}
-		
+
 		// else if...
 		if !frame.conditionMet {
 			var ok bool
@@ -1681,15 +1592,16 @@ func splitFields(input string) []string {
 				continue
 			}
 
-			if ch == '(' {
+			switch ch {
+			case '(':
 				parenDepth++
-			} else if ch == ')' {
+			case ')':
 				if parenDepth > 0 {
 					parenDepth--
 				}
-			} else if ch == '{' {
+			case '{':
 				braceDepth++
-			} else if ch == '}' {
+			case '}':
 				if braceDepth > 0 {
 					braceDepth--
 				}

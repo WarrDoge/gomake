@@ -246,7 +246,7 @@ func (p *Project) Expand(input string, automatic map[string]string) string {
 }
 
 func (p *Project) ExpandPrerequisites(deps []string, automatic map[string]string) []string {
-	var expanded []string
+	expanded := make([]string, 0, len(deps))
 	for _, dep := range deps {
 		res := p.Expand(dep, automatic)
 		expanded = append(expanded, splitFields(res)...)

@@ -178,10 +178,10 @@ func (e *Engine) canSatisfyPrerequisitesRecursive(target config.Target, visited 
 	return true
 }
 
-func (e *Engine) ensureConcreteTarget(name string) (config.Target, bool) {
+func (e *Engine) ensureConcreteTarget(name string) bool {
 	if rules, ok := e.targets[name]; ok {
 		if len(rules) == 0 {
-			return config.Target{}, false
+			return false
 		}
 		if len(rules) == 1 && !rules[0].DoubleColon && len(rules[0].Commands) == 0 {
 			if rule, ok := e.findMatchingRule(name); ok {
@@ -189,28 +189,24 @@ func (e *Engine) ensureConcreteTarget(name string) (config.Target, bool) {
 				rules[0].Deps = appendUnique(rules[0].Deps, rule.Deps...)
 				rules[0].OrderOnlyDeps = appendUnique(rules[0].OrderOnlyDeps, rule.OrderOnlyDeps...)
 				e.targets[name] = rules
-				return rules[0], true
+				return true
 			}
 		}
-		return rules[0], true
+		return true
 	}
 	if rule, ok := e.findMatchingRule(name); ok {
 		rule.Intermediate = true
 		e.targets[name] = []config.Target{rule}
-		return rule, true
+		return true
 	}
-	return config.Target{}, false
-}
-
-func (e *Engine) canSatisfyPrerequisites(target config.Target) bool {
-	return e.canSatisfyPrerequisitesRecursive(target, make(map[string]bool))
+	return false
 }
 
 func (e *Engine) Build(targetName string) error {
 	if targetName == "" {
 		targetName = e.project.DefaultTarget
 	}
-	if _, ok := e.ensureConcreteTarget(targetName); !ok {
+	if !e.ensureConcreteTarget(targetName) {
 		return e.buildUnknownTarget(targetName)
 	}
 
@@ -293,8 +289,7 @@ func (e *Engine) buildParallel(order []string) error {
 	var firstErr error
 	var allErrors []error
 
-	var complete func(name string, err error)
-	complete = func(name string, err error) {
+	complete := func(name string, err error) {
 		if completed[name] {
 			return
 		}
@@ -549,7 +544,7 @@ func (e *Engine) resolve(targetName string) ([]string, error) {
 
 		for _, target := range e.targets[name] {
 			for _, dep := range e.getAllPrerequisites(target) {
-				if _, ok := e.ensureConcreteTarget(dep); !ok {
+				if !e.ensureConcreteTarget(dep) {
 					continue
 				}
 				if err := visit(dep, effVars, effFlavors, effOverrides); err != nil {

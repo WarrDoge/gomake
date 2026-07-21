@@ -191,7 +191,8 @@ func parseArgs(args []string) (build.Options, []string, map[string]string, bool,
 		versionF       bool
 		help           bool
 		dirPaths       stringSliceFlag
-		whatIf         stringSliceFlag
+		//nolint:prealloc // accumulated by flag parsing, then extended with env values
+		whatIf stringSliceFlag
 	)
 
 	fs.StringVar(&filePath, "f", ".", "path to project file or directory")

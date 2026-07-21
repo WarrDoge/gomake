@@ -18,6 +18,12 @@ linters:
         - style
         - opinionated
         - experimental
+      # config.Target/Options are passed by value throughout by design; the
+      # copy cost is negligible for the number of targets a makefile has, and
+      # pervasive pointers would trade clarity and safety for no real gain.
+      disabled-checks:
+        - hugeParam
+        - rangeValCopy
   exclusions:
     generated: lax
     presets:

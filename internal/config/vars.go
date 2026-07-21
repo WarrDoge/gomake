@@ -25,18 +25,6 @@ func expandVarsWarnUndefined(input string, vars map[string]string, flavors map[s
 	return expandVarsWithStack(input, vars, flavors, nil, onUndefined)
 }
 
-func expandRecipeVars(input string, vars map[string]string, flavors map[string]VariableFlavor) string {
-	return ExpandVarsWithOptions(input, vars, flavors, nil, true, true, nil, nil)
-}
-
-func expandRecipeVarsWarnUndefined(input string, vars map[string]string, flavors map[string]VariableFlavor, onUndefined func(string)) string {
-	return ExpandVarsWithOptions(input, vars, flavors, nil, true, true, onUndefined, nil)
-}
-
-func expandRecipeVarsWithCallbacks(input string, vars map[string]string, flavors map[string]VariableFlavor, onUndefined func(string), onRecursive func(string)) string {
-	return ExpandVarsWithOptions(input, vars, flavors, nil, true, true, onUndefined, onRecursive)
-}
-
 func expandVarsWithStack(input string, vars map[string]string, flavors map[string]VariableFlavor, stack map[string]bool, onUndefined func(string)) string {
 	return expandVarsWithStackCallbacks(input, vars, flavors, stack, onUndefined, nil)
 }
@@ -56,7 +44,7 @@ func ExpandVarsWithOptions(input string, vars map[string]string, flavors map[str
 		replacement := ""
 		if kind == '(' || kind == '{' {
 			expr := strings.TrimSpace(token[2 : len(token)-1])
-			if value, handled := evalFunction(expr, vars, flavors, stack, preserveAutomatic, onUndefined, onRecursive); handled {
+			if value, handled := evalFunction(expr, vars, flavors, stack, preserveAutomatic, onRecursive); handled {
 				replacement = value
 			} else {
 				key := expandVarsWithStackCallbacks(expr, vars, flavors, stack, onUndefined, onRecursive)
@@ -75,7 +63,7 @@ func ExpandVarsWithOptions(input string, vars map[string]string, flavors map[str
 				result = result[:start] + replacement + result[end:]
 				continue
 			}
-			key := variableRefName(token, kind, vars, flavors, stack)
+			key := variableRefName(kind)
 			if preserveAutomatic && isAutomaticReference(key) {
 				replacement = protectDollars(token)
 			} else {
@@ -89,7 +77,7 @@ func ExpandVarsWithOptions(input string, vars map[string]string, flavors map[str
 	}
 }
 
-func evalFunction(expr string, vars map[string]string, flavors map[string]VariableFlavor, stack map[string]bool, preserveAutomatic bool, onUndefined func(string), onRecursive func(string)) (string, bool) {
+func evalFunction(expr string, vars map[string]string, flavors map[string]VariableFlavor, stack map[string]bool, preserveAutomatic bool, onRecursive func(string)) (string, bool) {
 	name, args, ok := splitFunctionInvocation(expr)
 	if !ok {
 		return "", false
@@ -448,7 +436,7 @@ func evalFunction(expr string, vars map[string]string, flavors map[string]Variab
 		if len(parts) > 1 {
 			invocation += " " + strings.Join(parts[1:], ",")
 		}
-		value, _ := evalFunction(invocation, vars, flavors, stack, preserveAutomatic, onUndefined, onRecursive)
+		value, _ := evalFunction(invocation, vars, flavors, stack, preserveAutomatic, onRecursive)
 		return value, true
 	case "origin":
 		name := strings.TrimSpace(expand(args))
@@ -886,11 +874,8 @@ func findDelimitedVarEnd(input string, start int, open, close byte) (int, bool) 
 	return -1, false
 }
 
-func variableRefName(token string, kind byte, vars map[string]string, flavors map[string]VariableFlavor, stack map[string]bool) string {
-	switch kind {
-	default:
-		return string(kind)
-	}
+func variableRefName(kind byte) string {
+	return string(kind)
 }
 
 func resolveVar(name string, vars map[string]string, flavors map[string]VariableFlavor, stack map[string]bool, onUndefined func(string), onRecursive func(string)) string {
@@ -970,10 +955,6 @@ func applyAssignmentWithWarning(vars map[string]string, flavors map[string]Varia
 	}
 
 	return nil
-}
-
-func appendValue(vars map[string]string, flavors map[string]VariableFlavor, key, value string) {
-	appendValueWithWarning(vars, flavors, key, value, nil)
 }
 
 func appendValueWithWarning(vars map[string]string, flavors map[string]VariableFlavor, key, value string, onUndefined func(string)) {

@@ -308,7 +308,7 @@ foo.c:
 	if !strings.Contains(out, "Archiving foo.o") {
 		t.Errorf("third build should run archiving after source change:\n%s", out)
 	}
-	}
+}
 
 func TestCLISuffixRules(t *testing.T) {
 	bin := buildTestBinary(t)
@@ -345,7 +345,7 @@ clean:
 	if !strings.Contains(out, "Compiling foo.c to foo.o") {
 		t.Errorf("output missing 'Compiling foo.c to foo.o':\n%s", out)
 	}
-	}
+}
 
 func TestCLISpecialTargets(t *testing.T) {
 	bin := buildTestBinary(t)
@@ -394,7 +394,7 @@ int2:
 	if _, err := os.Stat(filepath.Join(dir, "int2")); err != nil {
 		t.Errorf("int2 should have been preserved")
 	}
-	}
+}
 
 func TestCLIDefaultRule(t *testing.T) {
 	bin := buildTestBinary(t)
@@ -428,7 +428,7 @@ all: missing-prereq
 	}
 }
 
-	func TestCLIParallelJobsBuildIndependentTargets(t *testing.T) {
+func TestCLIParallelJobsBuildIndependentTargets(t *testing.T) {
 	files := map[string]string{
 		"Makefile": ".PHONY: all first second\nall: first second\nfirst:\n\tsleep 2; printf 'first' > first.txt\nsecond:\n\tsleep 2; printf 'second' > second.txt\n",
 	}
