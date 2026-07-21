@@ -1,4 +1,4 @@
-.PHONY: fmt lint unit integration coverage test verify build build-static build-all verify-static
+.PHONY: fmt lint secrets unit integration coverage test verify build build-static build-all verify-static
 
 APP := gomake
 DIST_DIR := .tmp/dist
@@ -20,6 +20,9 @@ lint:
 	mkdir -p .tmp $(GOCACHE)
 	GOCACHE=$(GOCACHE) golangci-lint run ./...
 
+secrets:
+	gitleaks detect --source . -v
+
 unit:
 	mkdir -p .tmp $(GOCACHE)
 	GOCACHE=$(GOCACHE) go test ./...
@@ -34,7 +37,7 @@ coverage:
 
 test: unit integration
 
-verify: fmt lint test build-static verify-static
+verify: fmt lint secrets test build-static verify-static
 
 build:
 	mkdir -p .tmp $(GOCACHE)
